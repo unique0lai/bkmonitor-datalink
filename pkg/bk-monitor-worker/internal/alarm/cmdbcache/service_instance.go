@@ -178,6 +178,8 @@ func (m *ServiceInstanceCacheManager) RefreshByBiz(ctx context.Context, bkBizId 
 			}
 			var host AlarmHostInfo
 			if err := json.Unmarshal([]byte(value.(string)), &host); err != nil {
+				// todo: 临时增加日志，后续删除
+				logger.Errorf("unmarshal host failed, value: %s", value.(string))
 				return errors.Wrap(err, "unmarshal host failed")
 			}
 			hosts[strconv.Itoa(host.BkHostId)] = host
