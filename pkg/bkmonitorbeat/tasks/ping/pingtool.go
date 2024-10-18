@@ -268,8 +268,8 @@ var DoPing = func(ctx context.Context, resMap map[string]map[string]*Info, t *Ba
 
 				resMap[target][ipStr] = pingInfo
 				logger.Debugf(
-					"received icmp package: target:%s,recvCount:%d,totalCount:%d,maxRTT:%f,minRTT:%f,totalRTT:%f",
-					target, pingInfo.RecvCount, pingInfo.TotalCount, pingInfo.MaxRTT, pingInfo.MinRTT, pingInfo.TotalRTT,
+					"received icmp package: target:%s,ip:%s,recvCount:%d,totalCount:%d,maxRTT:%f,minRTT:%f,totalRTT:%f",
+					target, ipStr, pingInfo.RecvCount, pingInfo.TotalCount, pingInfo.MaxRTT, pingInfo.MinRTT, pingInfo.TotalRTT,
 				)
 				// 计数
 				totalCount++
