@@ -250,7 +250,6 @@ var DoPing = func(ctx context.Context, resMap map[string]map[string]*Info, t *Ba
 		for target := range targets {
 			pingInfo, ok := resMap[target][ipStr]
 			if ok {
-				logger.Debugf("target:%s,received icmp package", target)
 				pingInfo.RecvCount++
 				// 取得毫秒级数据
 				rttMillSecond := rtt.Seconds() * 1000
@@ -268,6 +267,10 @@ var DoPing = func(ctx context.Context, resMap map[string]map[string]*Info, t *Ba
 				pingInfo.TotalRTT += rttMillSecond
 
 				resMap[target][ipStr] = pingInfo
+				logger.Debugf(
+					"received icmp package: target:%s,recvCount:%d,totalCount:%d,maxRTT:%f,minRTT:%f,totalRTT:%f",
+					target, pingInfo.RecvCount, pingInfo.TotalCount, pingInfo.MaxRTT, pingInfo.MinRTT, pingInfo.TotalRTT,
+				)
 				// 计数
 				totalCount++
 				// 全部收到响应关闭
