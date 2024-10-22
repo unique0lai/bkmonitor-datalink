@@ -47,6 +47,9 @@ func (g *Gather) analyzeResult(resMap map[string]map[string]*Info, dataID int32,
 			}
 
 			logger.Debugf("resMap item:%v", v)
+
+			config := g.GetConfig().(*configs.PingTaskConfig)
+
 			event := tasks.NewPingEvent(g.GetConfig())
 			now := time.Now()
 			// 计算丢包率

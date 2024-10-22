@@ -59,4 +59,5 @@ func (s *HTTPConfiSuite) TestConfigClean() {
 	s.Equal("raw", stepConf.RequestFormat)
 	s.Equal("", stepConf.Response)
 	s.Equal("startswith", stepConf.ResponseFormat)
+	s.Equal(false, stepConf.CustomReport)
 }

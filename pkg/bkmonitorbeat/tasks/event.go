@@ -10,6 +10,7 @@
 package tasks
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -409,4 +410,77 @@ func NewMetricEvent(task define.TaskConfig) *MetricEvent {
 		Labels: labels,
 		BizID:  task.GetBizID(),
 	}
+}
+
+// CustomEvent 自定义消息事件
+type CustomEvent struct {
+	Type            string
+	Data            common.MapStr
+	ignoreCmdbLevel bool
+}
+
+// NewCustomEvent 创建自定义事件
+func NewCustomEvent(t string, data common.MapStr, ignoreCmdbLevel bool) *CustomEvent {
+	return &CustomEvent{
+		Type:            t,
+		Data:            data,
+		ignoreCmdbLevel: ignoreCmdbLevel,
+	}
+}
+
+// NewCustomEventBySimpleEvent 通过SimpleEvent创建自定义事件
+func NewCustomEventBySimpleEvent(e *SimpleEvent) *CustomEvent {
+	ts := e.StartAt.Unix()
+
+	dimensions := map[string]string{
+		"bk_biz_id":   strconv.Itoa(int(e.BizID)),
+		"target_host": e.TargetHost,
+		"target_port": strconv.Itoa(e.TargetPort),
+		"task_id":     strconv.Itoa(int(e.TaskID)),
+		"task_type":   e.TaskType,
+		"status":      strconv.Itoa(int(e.Status)),
+		"resolved_ip": e.ResolvedIP,
+		"error_code":  strconv.Itoa(e.ErrorCode.Code()),
+	}
+
+	labels := e.Labels[0]
+	if len(labels) > 0 {
+		for k, v := range labels {
+			dimensions[k] = v
+		}
+	}
+
+	data := common.MapStr{
+		"dataid": e.DataID,
+		"data": []map[string]interface{}{
+			{
+				"target":    fmt.Sprintf("%s:%d", e.TargetHost, e.TargetPort),
+				"dimension": dimensions,
+				"metrics": map[string]interface{}{
+					"available":     e.Available,
+					"task_duration": int(e.TaskDuration().Milliseconds()),
+				},
+				"timestamp": ts * 1000,
+			},
+		},
+		"time":      ts,
+		"timestamp": ts,
+	}
+
+	return NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel())
+}
+
+// GetType 获取事件类型
+func (e *CustomEvent) GetType() string {
+	return e.Type
+}
+
+// AsMapStr 转换为mapstr
+func (e *CustomEvent) AsMapStr() common.MapStr {
+	return e.Data
+}
+
+// IgnoreCMDBLevel 是否忽略CMDB层级
+func (e *CustomEvent) IgnoreCMDBLevel() bool {
+	return e.ignoreCmdbLevel
 }

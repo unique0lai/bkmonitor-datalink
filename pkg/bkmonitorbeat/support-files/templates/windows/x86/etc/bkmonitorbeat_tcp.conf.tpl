@@ -42,15 +42,10 @@ tasks: {% for task in tasks or get_hosts_by_node(config_hosts) %}
     response: {{ task.response or response or '' }}
     # 内容匹配方式
     response_format: {{ (task.response_format or response_format) | default("eq", true) }}
-    {%- if (labels or task.labels) %}
+    {%- if task.labels %}
     labels:
-    {%- for label in labels %}
-    {%- for key, value in label.items() %}
-    {{"-" if loop.first else " "}} {{key}}: "{{ value }}"
-    {%- endfor %}
-    {%- endfor %}
     {%- for key, value in task.labels.items() %}
-    {{"-" if not labels and loop.first else " "}} {{ key }}: "{{ value }}"
+    {{"-" if loop.first else " "}} {{ key }}: "{{ value }}"
     {% endfor %}
     {% endif %}
 {%- endfor %}
