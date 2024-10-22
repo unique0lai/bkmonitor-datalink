@@ -10,6 +10,9 @@ max_buffer_size: {{ max_buffer_size | default(10240, true) }}
 max_timeout: {{ max_timeout | default("30s", true) }}
 # 最小检测间隔
 min_period: {{ min_period | default("3s", true) }}
+{%- if custom_report == "true" %}
+# 是否自定义上报
+"custom_report: {{ custom_report | default("false", true) }}{% endif %}
 # 任务列表
 tasks: {% for task in tasks %}
   - task_id: {{ task.task_id }}
@@ -41,4 +44,16 @@ tasks: {% for task in tasks %}
         response: {{ step.response or '' }}
         # 内容匹配方式
         response_format: {{ step.response_format | default("eq", true) }}
-        response_code: {{ step.response_code }}{% endfor %}{% endfor %}
+        response_code: {{ step.response_code }}{% endfor %}
+    {%- if (labels or task.labels) %}
+    labels:
+    {%- for label in labels %}
+    {%- for key, value in label.items() %}
+    {{"-" if loop.first else " "}} {{key}}: "{{ value }}"
+    {%- endfor %}
+    {%- endfor %}
+    {%- for key, value in task.labels.items() %}
+    {{"-" if not labels and loop.first else " "}} {{ key }}: "{{ value }}"
+    {% endfor %}
+    {% endif %}
+{%- endfor %}

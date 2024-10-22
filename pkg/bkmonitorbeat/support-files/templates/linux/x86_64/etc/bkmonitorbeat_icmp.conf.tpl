@@ -11,6 +11,9 @@ max_buffer_size: {{ max_buffer_size | default(10240, true) }}
 max_timeout: {{ max_timeout | default('100s', true) }}
 # 最小检测间隔
 min_period: {{ min_period | default('3s', true) }}
+{%- if custom_report == "true" %}
+# 是否自定义上报
+custom_report: {{ custom_report | default("false", true) }}{% endif %}
 # 任务列表, ICMP仅有一个task
 tasks: {% for task in tasks %}
   - task_id: {{ task.task_id }}
@@ -35,8 +38,16 @@ tasks: {% for task in tasks %}
     {% if instance[output_field] -%}
     - target: {{ instance[output_field] }}
       target_type: ip
-    {% endif %}{% endfor %}{% endfor %}{% endif %}{% endfor %}
-    {% if labels %}labels:
-    {% for label in labels %}{% for key, value in label.items() %}{{"-" if loop.first else " "}} {{key}}: "{{ value }}"
-    {% endfor %}{% endfor %}
+    {% endif %}{% endfor %}{% endfor %}{% endif %}
+    {%- if (labels or task.labels) %}
+    labels:
+    {%- for label in labels %}
+    {%- for key, value in label.items() %}
+    {{"-" if loop.first else " "}} {{key}}: "{{ value }}"
+    {%- endfor %}
+    {% endfor %}
+    {%- for key, value in task.labels.items() %}
+    {{"-" if not labels and loop.first else " "}} {{ key }}: "{{ value }}"
+    {% endfor %}
     {% endif %}
+{%- endfor %}
