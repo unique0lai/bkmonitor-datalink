@@ -432,6 +432,7 @@ func NewCustomEvent(t string, data common.MapStr, ignoreCmdbLevel bool) *CustomE
 func NewCustomEventBySimpleEvent(e *SimpleEvent) *CustomEvent {
 	ts := e.StartAt.Unix()
 
+	// 维度取值
 	dimensions := map[string]string{
 		"bk_biz_id":   strconv.Itoa(int(e.BizID)),
 		"target_host": e.TargetHost,
@@ -441,13 +442,6 @@ func NewCustomEventBySimpleEvent(e *SimpleEvent) *CustomEvent {
 		"status":      strconv.Itoa(int(e.Status)),
 		"resolved_ip": e.ResolvedIP,
 		"error_code":  strconv.Itoa(e.ErrorCode.Code()),
-	}
-
-	labels := e.Labels[0]
-	if len(labels) > 0 {
-		for k, v := range labels {
-			dimensions[k] = v
-		}
 	}
 
 	data := common.MapStr{
@@ -460,7 +454,42 @@ func NewCustomEventBySimpleEvent(e *SimpleEvent) *CustomEvent {
 					"available":     e.Available,
 					"task_duration": int(e.TaskDuration().Milliseconds()),
 				},
-				"timestamp": ts * 1000,
+				"timestamp":  ts * 1000,
+				"group_info": e.Labels,
+			},
+		},
+		"time":      ts,
+		"timestamp": ts,
+	}
+
+	return NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel())
+}
+
+// NewCustomEventByPingEvent 通过PingEvent创建自定义事件
+func NewCustomEventByPingEvent(e *PingEvent) *CustomEvent {
+	ts := e.Time.Unix()
+
+	// 维度取值
+	dimensions := map[string]string{}
+	for k, v := range e.Dimensions {
+		dimensions[k] = v
+	}
+
+	// 指标取值
+	metrics := map[string]interface{}{}
+	for k, v := range e.Metrics {
+		metrics[k] = v
+	}
+
+	data := common.MapStr{
+		"dataid": e.DataID,
+		"data": []map[string]interface{}{
+			{
+				"target":     dimensions["target"],
+				"dimension":  dimensions,
+				"metrics":    metrics,
+				"timestamp":  ts * 1000,
+				"group_info": e.Labels,
 			},
 		},
 		"time":      ts,

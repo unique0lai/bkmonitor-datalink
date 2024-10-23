@@ -46,11 +46,8 @@ func (g *Gather) analyzeResult(resMap map[string]map[string]*Info, dataID int32,
 				continue
 			}
 
-			logger.Debugf("resMap item:%v", v)
-
 			config := g.GetConfig().(*configs.PingTaskConfig)
-
-			event := tasks.NewPingEvent(g.GetConfig())
+			event := tasks.NewPingEvent(config)
 			now := time.Now()
 			// 计算丢包率
 			var lossPercent float64
@@ -91,7 +88,13 @@ func (g *Gather) analyzeResult(resMap map[string]map[string]*Info, dataID int32,
 			}
 			event.Dimensions = dimensions
 			event.Metrics = metrics
-			outChan <- event
+
+			// 如果需要使用自定义上报，则将事件转换为自定义事件
+			if config.CustomReport {
+				outChan <- tasks.NewCustomEventByPingEvent(event)
+			} else {
+				outChan <- event
+			}
 		}
 	}
 }
