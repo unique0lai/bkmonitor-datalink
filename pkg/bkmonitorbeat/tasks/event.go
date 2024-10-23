@@ -417,14 +417,16 @@ type CustomEvent struct {
 	Type            string
 	Data            common.MapStr
 	ignoreCmdbLevel bool
+	Labels          []map[string]string
 }
 
 // NewCustomEvent 创建自定义事件
-func NewCustomEvent(t string, data common.MapStr, ignoreCmdbLevel bool) *CustomEvent {
+func NewCustomEvent(t string, data common.MapStr, ignoreCmdbLevel bool, labels []map[string]string) *CustomEvent {
 	return &CustomEvent{
 		Type:            t,
 		Data:            data,
 		ignoreCmdbLevel: ignoreCmdbLevel,
+		Labels:          labels,
 	}
 }
 
@@ -454,20 +456,22 @@ func NewCustomEventBySimpleEvent(e *SimpleEvent) *CustomEvent {
 					"available":     e.Available,
 					"task_duration": int(e.TaskDuration().Milliseconds()),
 				},
-				"timestamp":  ts * 1000,
-				"group_info": e.Labels,
+				"timestamp": ts * 1000,
 			},
 		},
 		"time":      ts,
 		"timestamp": ts,
 	}
 
-	return NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel())
+	return NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel(), e.Labels)
 }
 
 // NewCustomEventByPingEvent 通过PingEvent创建自定义事件
 func NewCustomEventByPingEvent(e *PingEvent) *CustomEvent {
 	ts := e.Time.Unix()
+
+	// 触发维度补充
+	e.AsMapStr()
 
 	// 维度取值
 	dimensions := map[string]string{}
@@ -485,18 +489,17 @@ func NewCustomEventByPingEvent(e *PingEvent) *CustomEvent {
 		"dataid": e.DataID,
 		"data": []map[string]interface{}{
 			{
-				"target":     dimensions["target"],
-				"dimension":  dimensions,
-				"metrics":    metrics,
-				"timestamp":  ts * 1000,
-				"group_info": e.Labels,
+				"target":    dimensions["target"],
+				"dimension": dimensions,
+				"metrics":   metrics,
+				"timestamp": ts * 1000,
 			},
 		},
 		"time":      ts,
 		"timestamp": ts,
 	}
 
-	return NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel())
+	return NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel(), e.Labels)
 }
 
 // GetType 获取事件类型
@@ -506,6 +509,47 @@ func (e *CustomEvent) GetType() string {
 
 // AsMapStr 转换为mapstr
 func (e *CustomEvent) AsMapStr() common.MapStr {
+	// 如果没有labels，直接返回data
+	if len(e.Labels) == 0 {
+		return e.Data
+	}
+
+	var records []map[string]interface{}
+
+	for _, record := range e.Data["data"].([]map[string]interface{}) {
+		for _, labels := range e.Labels {
+			// 深拷贝
+			newRecord := make(map[string]interface{})
+			for k, v := range record {
+				switch v.(type) {
+				case map[string]string:
+					newValue := make(map[string]string)
+					for kk, vv := range v.(map[string]string) {
+						newValue[kk] = vv
+					}
+					newRecord[k] = newValue
+				case map[string]interface{}:
+					newValue := make(map[string]interface{})
+					for kk, vv := range v.(map[string]interface{}) {
+						newValue[kk] = vv
+					}
+					newRecord[k] = newValue
+				default:
+					newRecord[k] = v
+				}
+			}
+
+			// 将labels注入到dimensions中
+			dimensions := newRecord["dimension"].(map[string]string)
+			for k, v := range labels {
+				dimensions[k] = v
+			}
+
+			records = append(records, newRecord)
+		}
+	}
+	e.Data["data"] = records
+
 	return e.Data
 }
 

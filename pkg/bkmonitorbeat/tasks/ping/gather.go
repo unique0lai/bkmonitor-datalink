@@ -11,6 +11,7 @@ package ping
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -66,7 +67,7 @@ func (g *Gather) analyzeResult(resMap map[string]map[string]*Info, dataID int32,
 				"target":      v.Name, // 实际ping的目标地址
 				"target_type": v.Type, // 目标类型
 				"error_code":  "0",
-				"bk_biz_id":   string(g.TaskConfig.GetBizID()),
+				"bk_biz_id":   strconv.Itoa(int(g.TaskConfig.GetBizID())),
 				"resolved_ip": resolvedIP,
 			}
 

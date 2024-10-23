@@ -11,6 +11,7 @@ package http
 
 import (
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/elastic/beats/libbeat/common"
@@ -86,4 +87,37 @@ func (e *Event) FailFromError(err error) {
 			e.Fail(define.CodeResponseFailed)
 		}
 	}
+}
+
+func NewCustomEventByHttpEvent(e *Event) *tasks.CustomEvent {
+	ts := e.StartAt.Unix()
+	data := common.MapStr{
+		"dataid": e.DataID,
+		"data": []map[string]interface{}{
+			{
+				"target": e.URL,
+				"dimension": map[string]string{
+					"url":           e.URL,
+					"method":        e.Method,
+					"response_code": strconv.Itoa(e.ResponseCode),
+					"message":       e.Message,
+					"error_code":    strconv.Itoa(e.ErrorCode.Code()),
+					"media_type":    e.MediaType,
+					"resolved_ip":   e.ResolvedIP,
+					"status":        strconv.Itoa(int(e.Status)),
+					"task_id":       strconv.Itoa(int(e.TaskID)),
+					"task_type":     e.TaskType,
+				},
+				"metrics": map[string]interface{}{
+					"available":     e.Available,
+					"task_duration": int(e.TaskDuration().Milliseconds()),
+				},
+				"timestamp": ts * 1000,
+			},
+		},
+		"time":      ts,
+		"timestamp": ts,
+	}
+
+	return tasks.NewCustomEvent(e.GetType(), data, e.IgnoreCMDBLevel(), e.Labels)
 }

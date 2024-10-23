@@ -32,7 +32,6 @@ type HTTPTaskStepConfig struct {
 	Headers          map[string]string `config:"headers"`
 	ResponseCode     string            `config:"response_code"`
 	ResponseCodeList []int             `config:"response_code_list"`
-	CustomReport     bool              `config:"custom_report"`
 }
 
 func (c *HTTPTaskStepConfig) URLs() []string {
@@ -88,6 +87,7 @@ type HTTPTaskConfig struct {
 	Proxy              string                `config:"proxy"`
 	InsecureSkipVerify bool                  `config:"insecure_skip_verify"`
 	Steps              []*HTTPTaskStepConfig `config:"steps"`
+	CustomReport       bool                  `config:"custom_report"`
 }
 
 // InitIdent :
