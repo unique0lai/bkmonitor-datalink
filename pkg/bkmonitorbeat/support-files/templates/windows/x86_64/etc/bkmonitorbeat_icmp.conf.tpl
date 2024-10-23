@@ -11,9 +11,6 @@ max_buffer_size: {{ max_buffer_size | default(10240, true) }}
 max_timeout: {{ max_timeout | default('100s', true) }}
 # 最小检测间隔
 min_period: {{ min_period | default('3s', true) }}
-{%- if custom_report == "true" %}
-# 是否自定义上报
-custom_report: {{ custom_report | default("false", true) }}{% endif %}
 # 任务列表, ICMP仅有一个task
 tasks: {% for task in tasks %}
   - task_id: {{ task.task_id }}
@@ -21,6 +18,9 @@ tasks: {% for task in tasks %}
     target_ip_type: {{ task.target_ip_type | default(0, true) }}
     dns_check_mode: {{ task.dns_check_mode | default("single", true) }}
     period: {{ task.period }}
+    {%- if custom_report == "true" %}
+    # 是否自定义上报
+    custom_report: {{ custom_report | default("false", true) }}{% endif %}
     # 检测超时（connect+read总共时间）
     timeout: {{ task.timeout | default('3s', true) }}
     max_rtt: {{ task.max_rtt }}

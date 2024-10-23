@@ -10,9 +10,6 @@ max_buffer_size: {{ max_buffer_size | default(10240, true) }}
 max_timeout: {{ max_timeout | default("30s", true) }}
 # 最小检测间隔
 min_period: {{ min_period | default("3s", true) }}
-{%- if custom_report %}
-# 是否自定义上报
-"custom_report: {{ custom_report | default("false", true) }}{% endif %}
 # 任务列表
 tasks: {% for task in tasks or get_hosts_by_node(config_hosts) %}
   - task_id: {{ task.task_id or task_id }}
@@ -20,6 +17,9 @@ tasks: {% for task in tasks or get_hosts_by_node(config_hosts) %}
     target_ip_type: {{ task.target_ip_type | default(0, true) }}
     dns_check_mode: {{ task.dns_check_mode | default("single", true) }}
     period: {{ task.period or period }}
+    {%- if custom_report == "true" %}
+    # 是否自定义上报
+    custom_report: {{ custom_report | default("false", true) }}{% endif %}
     # 检测超时（connect+read总共时间）
     timeout: {{ (task.timeout or timeout) | default("3s", true) }}
     target_host: {{ task.target_host or task.ip }}

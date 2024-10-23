@@ -10,9 +10,6 @@ max_buffer_size: {{ max_buffer_size | default(10240, true) }}
 max_timeout: {{ max_timeout | default("30s", true) }}
 # 最小检测间隔
 min_period: {{ min_period | default("3s", true) }}
-{%- if custom_report == "true" %}
-# 是否自定义上报
-"custom_report: {{ custom_report | default("false", true) }}{% endif %}
 # 任务列表
 tasks: {% for task in tasks %}
   - task_id: {{ task.task_id }}
@@ -25,6 +22,9 @@ tasks: {% for task in tasks %}
     disable_keep_alives: {{ task.disable_keep_alives | lower }}
     # 检测超时（connect+read总共时间）
     timeout: {{ task.timeout | default("3s", true) }}
+    {%- if custom_report == "true" %}
+    # 是否自定义上报
+    custom_report: {{ custom_report | default("false", true) }}{% endif %}
     # 采集步骤
     steps: {% for step in task.steps %}
       - method: {{ step.method }}
