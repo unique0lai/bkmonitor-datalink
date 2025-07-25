@@ -13,13 +13,16 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/VictoriaMetrics/metricsql"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/internal/function"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/internal/json"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/internal/querystring"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/internal/set"
 )
 
@@ -29,24 +32,50 @@ const (
 	UUID = "query_uuid"
 )
 
+const (
+	ConditionEqual       = "eq"
+	ConditionNotEqual    = "ne"
+	ConditionRegEqual    = "req"
+	ConditionNotRegEqual = "nreq"
+	ConditionContains    = "contains"
+	ConditionNotContains = "ncontains"
+
+	ConditionExisted    = "existed"
+	ConditionNotExisted = "nexisted"
+
+	ConditionExact = "exact"
+	ConditionGt    = "gt"
+	ConditionGte   = "gte"
+	ConditionLt    = "lt"
+	ConditionLte   = "lte"
+)
+
+const (
+	DefaultReferenceName = "a"
+)
+
 type VmCondition string
 
+type FieldAlias map[string]string
+
 type TimeField struct {
-	Name string
-	Type string
-	Unit string
+	Name string `json:"name,omitempty"`
+	Type string `json:"type,omitempty"`
+	Unit string `json:"unit,omitempty"`
 }
 
 // Aggregate 聚合方法
 type Aggregate struct {
-	Name       string
-	Dimensions []string
-	Without    bool
+	Name  string `json:"name,omitempty"`
+	Field string `json:"field,omitempty"`
 
-	Window   time.Duration
-	TimeZone string
+	Dimensions []string `json:"dimensions,omitempty"`
+	Without    bool     `json:"without,omitempty"`
 
-	Args []interface{}
+	Window   time.Duration `json:"window,omitempty"`
+	TimeZone string        `json:"time_zone,omitempty"`
+
+	Args []interface{} `json:"args,omitempty"`
 }
 
 // OffSetInfo Offset的信息存储，供promql查询转换为influxdb查询语句时使用
@@ -61,78 +90,142 @@ type Aggregates []Aggregate
 
 // Query 查询扩展信息，为后面查询提供定位
 type Query struct {
-	SourceType string
-	Password   string // 查询鉴权
+	SourceType string `json:"source_type,omitempty"`
+	Password   string `json:"password,omitempty"` // 查询鉴权
 
-	ClusterID string // 存储 ID
+	ClusterID string `json:"cluster_id,omitempty"` // 存储 ID
 
-	StorageType string // 存储类型
+	StorageType string `json:"storage_type,omitempty"` // 存储类型
 
-	StorageIDs  []string
-	StorageID   string
-	StorageName string
+	StorageIDs  []string `json:"storage_ids,omitempty"`
+	StorageID   string   `json:"storage_id,omitempty"`
+	StorageName string   `json:"storage_name,omitempty"`
 
-	ClusterName string
-	TagsKey     []string
+	ClusterName string   `json:"cluster_name,omitempty"`
+	TagsKey     []string `json:"tags_key,omitempty"`
 
-	DataSource string
-	DataLabel  string
-	TableID    string
-	MetricName string
+	DataSource string `json:"data_source,omitempty"`
+	DataLabel  string `json:"data_label,omitempty"`
+	TableID    string `json:"table_id,omitempty"`
 
 	// vm 的 rt
-	VmRt string
+	VmRt          string `json:"vm_rt,omitempty"`
+	CmdbLevelVmRt string `json:"cmdb_level_vm_rt,omitempty"`
 
 	// 兼容 InfluxDB 结构体
-	RetentionPolicy string    // 存储 RP
-	DB              string    // 存储 DB
-	Measurement     string    // 存储 Measurement
-	Field           string    // 存储 Field
-	TimeField       TimeField // 时间字段
-	Timezone        string    // 存储 Timezone
-	Fields          []string  // 存储命中的 Field 列表，一般情况下为一个，当 Field 为模糊匹配时，解析为多个
-	Measurements    []string  // 存储命中的 Measurement 列表，一般情况下为一个，当 Measurement 为模糊匹配时，解析为多个
+	RetentionPolicy string     `json:"retention_policy,omitempty"` // 存储 RP
+	DB              string     `json:"db,omitempty"`               // 存储 DB
+	Measurement     string     `json:"measurement,omitempty"`      // 存储 Measurement
+	MeasurementType string     `json:"measurement_type,omitempty"` // 存储类型
+	Field           string     `json:"field,omitempty"`            // 存储 Field
+	TimeField       TimeField  `json:"time_field,omitempty"`       // 时间字段
+	Timezone        string     `json:"timezone,omitempty"`         // 存储 Timezone
+	Fields          []string   `json:"fields,omitempty"`           // 存储命中的 Field 列表，一般情况下为一个，当 Field 为模糊匹配时，解析为多个
+	FieldAlias      FieldAlias `json:"field_alias,omitempty"`
+	Measurements    []string   `json:"measurements,omitempty"` // 存储命中的 Measurement 列表，一般情况下为一个，当 Measurement 为模糊匹配时，解析为多个
+	MetricNames     []string   `json:"metric_names,omitempty"`
 
 	// 用于 promql 查询
-	IsHasOr bool // 标记是否有 or 条件
+	IsHasOr bool `json:"is_has_or,omitempty"` // 标记是否有 or 条件
 
-	Aggregates Aggregates // 聚合方法列表，从内到外排序
+	Aggregates Aggregates `json:"aggregates,omitempty"` // 聚合方法列表，从内到外排序
 
-	Condition string // 过滤条件
-
-	// BkSql 过滤条件
-	BkSqlCondition string
+	Condition string `json:"condition,omitempty"` // 过滤条件
 
 	// Vm 过滤条件
-	VmCondition    VmCondition
-	VmConditionNum int
+	VmCondition    VmCondition `json:"vm_condition,omitempty"`
+	VmConditionNum int         `json:"vm_condition_num,omitempty"`
 
-	Filters []map[string]string // 查询中自带查询条件，用于拼接
+	Filters []map[string]string `json:"filters,omitempty"` // 查询中自带查询条件，用于拼接
 
-	OffsetInfo OffSetInfo // limit等偏移量配置
+	OffsetInfo OffSetInfo `json:"offset_info,omitempty"` // limit等偏移量配置
 
-	SegmentedEnable bool // 是否开启分段查询
+	SegmentedEnable bool `json:"segmented_enable,omitempty"` // 是否开启分段查询
 
-	// Es 查询扩展
-	QueryString   string
-	AllConditions AllConditions
+	// 查询扩展
+	QueryString string `json:"query_string,omitempty"`
+	IsPrefix    bool   `json:"is_prefix,omitempty"`
 
-	HighLight *HighLight
+	AllConditions AllConditions `json:"all_conditions,omitempty"`
 
-	Source []string
-	From   int
-	Size   int
+	Source []string `json:"source,omitempty"`
+	From   int      `json:"from,omitempty"`
+	Size   int      `json:"size,omitempty"`
 
-	Scroll             string
-	ResultTableOptions ResultTableOptions
+	Scroll             string             `json:"scroll,omitempty"`
+	ResultTableOptions ResultTableOptions `json:"result_table_options,omitempty"`
 
-	Orders      Orders
-	NeedAddTime bool
+	Orders      Orders    `json:"orders,omitempty"`
+	NeedAddTime bool      `json:"need_add_time,omitempty"`
+	Collapse    *Collapse `json:"collapse,omitempty"`
+}
+
+func (q *Query) VMExpand() *VmExpand {
+	return &VmExpand{
+		ResultTableList: []string{q.VmRt},
+		MetricFilterCondition: map[string]string{
+			DefaultReferenceName: q.VmCondition.String(),
+		},
+		ClusterName: q.StorageName,
+	}
+}
+
+func (q *Query) LabelMap() (map[string][]function.LabelMapValue, error) {
+	labelMap := make(map[string][]function.LabelMapValue)
+	labelCheck := make(map[string]struct{})
+
+	addLabel := func(key string, operator string, values ...string) {
+		if len(values) == 0 {
+			return
+		}
+
+		for _, value := range values {
+			checkKey := key + ":" + value + ":" + operator
+			if _, ok := labelCheck[checkKey]; !ok {
+				labelCheck[checkKey] = struct{}{}
+				labelMap[key] = append(labelMap[key], function.LabelMapValue{
+					Value:    value,
+					Operator: operator,
+				})
+			}
+		}
+	}
+
+	for _, condition := range q.AllConditions {
+		for _, cond := range condition {
+			if cond.Value != nil && len(cond.Value) > 0 {
+				// 处理通配符
+				if cond.IsWildcard {
+					addLabel(cond.DimensionName, ConditionContains, cond.Value...)
+				} else {
+					switch cond.Operator {
+					// 只保留等于和包含的用法，其他类型不用处理
+					case ConditionEqual, ConditionExact, ConditionContains:
+						addLabel(cond.DimensionName, cond.Operator, cond.Value...)
+					}
+				}
+
+			}
+		}
+	}
+
+	if q.QueryString != "" {
+		err := querystring.LabelMap(q.QueryString, addLabel)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return labelMap, nil
 }
 
 type HighLight struct {
 	MaxAnalyzedOffset int  `json:"max_analyzed_offset,omitempty"`
 	Enable            bool `json:"enable,omitempty"`
+}
+
+type Collapse struct {
+	Field string `json:"field,omitempty"`
 }
 
 type Order struct {
@@ -255,10 +348,12 @@ func ReplaceVmCondition(condition VmCondition, replaceLabels ReplaceLabels) VmCo
 }
 
 // ToJson 通过 tableID 排序，并且返回 json 序列化
-func (qMetric QueryMetric) ToJson(isSort bool) string {
+func (qMetric *QueryMetric) ToJson(isSort bool) string {
 	if isSort {
-		sort.SliceIsSorted(qMetric.QueryList, func(i, j int) bool {
-			return qMetric.QueryList[i].TableID < qMetric.QueryList[j].TableID
+		sort.SliceStable(qMetric.QueryList, func(i, j int) bool {
+			a := qMetric.QueryList[i].TableID
+			b := qMetric.QueryList[j].TableID
+			return a < b
 		})
 	}
 
@@ -369,19 +464,110 @@ func (os Orders) SortSliceList(list []map[string]any) {
 
 	sort.SliceStable(list, func(i, j int) bool {
 		for _, o := range os {
-			a, _ := list[i][o.Name].(string)
-			b, _ := list[j][o.Name].(string)
+			a := list[i][o.Name]
+			b := list[j][o.Name]
 
 			if a != b {
-				if o.Ast {
-					r := a < b
-					return r
-				} else {
-					r := a > b
-					return r
+				result := lessFunc(a, b)
+				if result != 0 {
+					if o.Ast {
+						return result < 0
+					} else {
+						return result > 0
+					}
 				}
 			}
 		}
 		return true
 	})
+}
+
+func lessFunc(a, b interface{}) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	if a == nil {
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+
+	aNum, aIsNum := convertToFloat64(a)
+	bNum, bIsNum := convertToFloat64(b)
+
+	if aIsNum && bIsNum {
+		if aNum < bNum {
+			return -1
+		} else if aNum > bNum {
+			return 1
+		}
+		return 0
+	}
+
+	aStr := convertToString(a)
+	bStr := convertToString(b)
+
+	if aStr < bStr {
+		return -1
+	} else if aStr > bStr {
+		return 1
+	}
+	return 0
+}
+
+func convertToFloat64(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case int:
+		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint8:
+		return float64(v), true
+	case uint16:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	case string:
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+func convertToString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", v)
+	case float32, float64:
+		return fmt.Sprintf("%g", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func (fa FieldAlias) Alias(f string) string {
+	if v, ok := fa[f]; ok {
+		return v
+	}
+	return f
 }

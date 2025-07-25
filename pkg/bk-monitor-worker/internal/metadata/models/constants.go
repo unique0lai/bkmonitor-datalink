@@ -85,6 +85,8 @@ const (
 	StorageTypeBkdata   = "bkdata"
 	StorageTypeArgus    = "argus"
 	StorageTypeVM       = "victoria_metrics"
+	StorageTypeDoris    = "doris"
+	StorageTypeBkSql    = "bk_sql"
 )
 
 const (
@@ -143,6 +145,7 @@ const (
 
 const (
 	TSGroupDefaultMeasurement = "__default__"
+	DorisMeasurement          = "doris"
 )
 
 // ReplaceConfig
@@ -214,6 +217,7 @@ const (
 	VmDataTypeUserCustom       = "user_custom"
 	VmDataTypeBcsClusterK8s    = "bcs_cluster_k8s"
 	VmDataTypeBcsClusterCustom = "bcs_cluster_custom"
+	CmdbLevelVmrt              = "cmdb_level_vm_rt"
 )
 
 // TimeStampLen

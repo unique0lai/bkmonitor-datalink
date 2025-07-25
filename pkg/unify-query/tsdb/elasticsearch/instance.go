@@ -33,6 +33,7 @@ import (
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/metadata"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/metric"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/pool"
+	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/query/structured"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/trace"
 	"github.com/TencentBlueKing/bkmonitor-datalink/pkg/unify-query/tsdb"
 )
@@ -183,6 +184,10 @@ func (i *Instance) getMappings(ctx context.Context, conn Connect, aliases []stri
 		return nil, err
 	}
 	mappingMap, err := client.GetMapping().Index(aliases...).Type("").Do(ctx)
+	if err != nil {
+		log.Warnf(ctx, "get mapping error: %s", err.Error())
+		return nil, err
+	}
 
 	indexes := make([]string, 0, len(mappingMap))
 	for index := range mappingMap {
@@ -230,8 +235,8 @@ func (i *Instance) esQuery(ctx context.Context, qo *queryOption, fact *FormatFac
 
 	// querystring 生成 elastic.query
 	if qb.QueryString != "" {
-		qs := NewQueryString(qb.QueryString, fact.NestedField)
-		q, qsErr := qs.Parser()
+		qs := NewQueryString(qb.QueryString, qb.IsPrefix, fact.NestedField)
+		q, qsErr := qs.ToDSL(ctx, qb.FieldAlias)
 		if qsErr != nil {
 			return nil, qsErr
 		}
@@ -271,8 +276,8 @@ func (i *Instance) esQuery(ctx context.Context, qo *queryOption, fact *FormatFac
 		}
 	}
 
-	if qb.HighLight != nil && qb.HighLight.Enable {
-		source.Highlight(fact.HighLight(qb.QueryString, qb.HighLight.MaxAnalyzedOffset))
+	if qb.Collapse != nil && qb.Collapse.Field != "" {
+		source.Collapse(elastic.NewCollapseBuilder(qb.Collapse.Field))
 	}
 
 	if source == nil {
@@ -321,7 +326,6 @@ func (i *Instance) esQuery(ctx context.Context, qo *queryOption, fact *FormatFac
 					return
 				}
 			}
-
 		}
 
 		if qb.Scroll != "" {
@@ -367,8 +371,17 @@ func (i *Instance) esQuery(ctx context.Context, qo *queryOption, fact *FormatFac
 		err = fmt.Errorf("es query %v error: %s", qo.indexes, res.Error.Reason)
 	}
 
+	if res.Hits != nil {
+		span.Set("total_hits", res.Hits.TotalHits)
+		span.Set("hits_length", len(res.Hits.Hits))
+	}
+	if res.Aggregations != nil {
+		span.Set("aggregations_length", len(res.Aggregations))
+	}
+
 	queryCost := time.Since(startAnalyze)
 	span.Set("query-cost", queryCost.String())
+
 	metric.TsDBRequestSecond(
 		ctx, queryCost, consul.ElasticsearchStorageType, qo.conn.Address,
 	)
@@ -404,10 +417,12 @@ func (i *Instance) queryWithAgg(ctx context.Context, qo *queryOption, fact *Form
 		return storage.ErrSeriesSet(err)
 	}
 
+	span.Set("time-series-length", len(qr.Timeseries))
+
 	return remote.FromQueryResult(false, qr)
 }
 
-func (i *Instance) getAlias(ctx context.Context, db string, needAddTime bool, start, end time.Time, timezone string) ([]string, error) {
+func (i *Instance) getAlias(ctx context.Context, db string, needAddTime bool, start, end time.Time, sourceType string) ([]string, error) {
 	var (
 		aliases []string
 		_, span = trace.NewSpan(ctx, "get-alias")
@@ -425,6 +440,16 @@ func (i *Instance) getAlias(ctx context.Context, db string, needAddTime bool, st
 	span.Set("need-add-time", needAddTime)
 	if !needAddTime {
 		return aliases, nil
+	}
+
+	span.Set("source-type", sourceType)
+
+	// bkdata 数据源使用东八区创建别名，而自建 es 则使用 UTC 创建别名，所以需要特殊处理该逻辑
+	var timezone string
+	if sourceType == structured.BkData {
+		timezone = "Asia/Shanghai"
+	} else {
+		timezone = "UTC"
 	}
 
 	loc, err = time.LoadLocation(timezone)
@@ -499,7 +524,7 @@ func (i *Instance) QueryRawData(ctx context.Context, query *metadata.Query, star
 	}
 	unit := metadata.GetQueryParams(ctx).TimeUnit
 
-	aliases, err := i.getAlias(ctx, query.DB, query.NeedAddTime, start, end, query.Timezone)
+	aliases, err := i.getAlias(ctx, query.DB, query.NeedAddTime, start, end, query.SourceType)
 	if err != nil {
 		return total, resultTableOptions, err
 	}
@@ -522,6 +547,7 @@ func (i *Instance) QueryRawData(ctx context.Context, query *metadata.Query, star
 				err = mappingErr
 				return
 			}
+			span.Set("mapping-length", len(mappings))
 			if len(mappings) == 0 {
 				err = fmt.Errorf("index is empty with %v，url: %s", aliases, conn.Address)
 				return
@@ -547,15 +573,22 @@ func (i *Instance) QueryRawData(ctx context.Context, query *metadata.Query, star
 				query:   query,
 				conn:    conn,
 			}
+			queryLabelMaps, err := query.LabelMap()
+			if err != nil {
+				err = fmt.Errorf("query label map error: %w", err)
+				return
+			}
 
 			fact := NewFormatFactory(ctx).
 				WithIsReference(metadata.GetQueryParams(ctx).IsReference).
 				WithQuery(query.Field, query.TimeField, qo.start, qo.end, unit, query.Size).
 				WithMappings(mappings...).
-				WithOrders(query.Orders)
+				WithOrders(query.Orders).
+				WithIncludeValues(queryLabelMaps)
 
 			sr, queryErr := i.esQuery(ctx, qo, fact)
 			if queryErr != nil {
+				log.Errorf(ctx, fmt.Sprintf("es query raw data error: %s", queryErr.Error()))
 				err = queryErr
 				return
 			}
@@ -583,10 +616,6 @@ func (i *Instance) QueryRawData(ctx context.Context, query *metadata.Query, star
 
 						if timeValue, ok := data[fact.GetTimeField().Name]; ok {
 							fact.data[FieldTime] = timeValue
-						}
-
-						if len(d.Highlight) > 0 {
-							fact.data[KeyHighLight] = d.Highlight
 						}
 
 						if idx == len(sr.Hits.Hits)-1 && d.Sort != nil {
@@ -648,8 +677,13 @@ func (i *Instance) QuerySeriesSet(
 		err error
 	)
 
-	ctx, span := trace.NewSpan(ctx, "elasticsearch-query-reference")
-	defer span.End(&err)
+	ctx, span := trace.NewSpan(ctx, "elasticsearch-query-series-set")
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("es query panic error: %s", r)
+		}
+		span.End(&err)
+	}()
 
 	if len(query.Aggregates) == 0 {
 		err = fmt.Errorf("聚合函数不能为空以及聚合周期跟 Step 必须一样")
@@ -667,7 +701,7 @@ func (i *Instance) QuerySeriesSet(
 	metric.TsDBRequestRangeMinute(ctx, rangeLeftTime, i.InstanceType())
 
 	user := metadata.GetUser(ctx)
-	span.Set("query-space-uid", user.SpaceUid)
+	span.Set("query-space-uid", user.SpaceUID)
 	span.Set("query-source", user.Source)
 	span.Set("query-username", user.Name)
 	span.Set("query-connects", i.connects.String())
@@ -694,7 +728,7 @@ func (i *Instance) QuerySeriesSet(
 			close(setCh)
 		}()
 
-		aliases, err1 := i.getAlias(ctx, query.DB, query.NeedAddTime, start, end, query.Timezone)
+		aliases, err1 := i.getAlias(ctx, query.DB, query.NeedAddTime, start, end, query.SourceType)
 		if err1 != nil {
 			setCh <- storage.ErrSeriesSet(err1)
 		}
@@ -717,10 +751,10 @@ func (i *Instance) QuerySeriesSet(
 					conn:    conn,
 				}
 
-				mappings, err1 := i.getMappings(ctx, qo.conn, qo.indexes)
+				mappings, errMapping := i.getMappings(ctx, qo.conn, qo.indexes)
 				// index 不存在，mappings 获取异常直接返回空
 				if len(mappings) == 0 {
-					log.Warnf(ctx, "index is empty with %v", qo.indexes)
+					log.Warnf(ctx, "index is empty with %v with %s error %v", qo.indexes, qo.conn.String(), errMapping)
 					return
 				}
 
@@ -734,13 +768,19 @@ func (i *Instance) QuerySeriesSet(
 				} else {
 					size = i.maxSize
 				}
+				queryLabelMap, err := query.LabelMap()
+				if err != nil {
+					setCh <- storage.ErrSeriesSet(fmt.Errorf("query label map error: %w", err))
+					return
+				}
 
 				fact := NewFormatFactory(ctx).
 					WithIsReference(metadata.GetQueryParams(ctx).IsReference).
 					WithQuery(query.Field, query.TimeField, qo.start, qo.end, unit, size).
 					WithMappings(mappings...).
 					WithOrders(query.Orders).
-					WithTransform(metadata.GetPromDataFormat(ctx).EncodeFunc(), metadata.GetPromDataFormat(ctx).DecodeFunc())
+					WithTransform(metadata.GetFieldFormat(ctx).EncodeFunc(), metadata.GetFieldFormat(ctx).DecodeFunc()).
+					WithIncludeValues(queryLabelMap)
 
 				if len(query.Aggregates) == 0 {
 					setCh <- storage.ErrSeriesSet(fmt.Errorf("aggregates is empty"))

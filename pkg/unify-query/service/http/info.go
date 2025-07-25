@@ -31,13 +31,15 @@ import (
 
 // TagValuesData
 type TagValuesData struct {
-	Values map[string][]string `json:"values"`
+	TraceID string              `json:"trace_id,omitempty"`
+	Values  map[string][]string `json:"values"`
 }
 
 type SeriesDataList []*SeriesData
 
 // SeriesData
 type SeriesData struct {
+	TraceID     string     `json:"trace_id,omitempty"`
 	Measurement string     `json:"measurement"`
 	Keys        []string   `json:"keys"`
 	Series      [][]string `json:"series"`
@@ -398,7 +400,6 @@ func HandleSpaceKeyPrint(c *gin.Context) {
 		refreshMapping := map[string]string{
 			routerInfluxdb.BkAppToSpaceKey:           routerInfluxdb.BkAppToSpaceChannelKey,
 			routerInfluxdb.SpaceToResultTableKey:     routerInfluxdb.SpaceToResultTableChannelKey,
-			routerInfluxdb.FieldToResultTableKey:     routerInfluxdb.FieldToResultTableChannelKey,
 			routerInfluxdb.DataLabelToResultTableKey: routerInfluxdb.DataLabelToResultTableChannelKey,
 			routerInfluxdb.ResultTableDetailKey:      routerInfluxdb.ResultTableDetailChannelKey,
 		}
@@ -506,7 +507,7 @@ func handleTsQueryInfosRequest(infoType infos.InfoType, c *gin.Context) {
 	span.Set("info-request-data", string(queryStmt))
 
 	// 如果header中有bkbizid，则以header中的值为最优先
-	spaceUid := user.SpaceUid
+	spaceUid := user.SpaceUID
 
 	span.Set("request-space-uid", spaceUid)
 
